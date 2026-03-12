@@ -60,6 +60,9 @@ func New(cfg *config.Config) *Server {
 		"lastIndex": func(arr []string) int {
 			return len(arr) - 1
 		},
+		"currentYear": func() int {
+			return time.Now().Year()
+		},
 	})
 
 	// Parse embedded templates
