@@ -17,7 +17,7 @@ domains:
       cert_file: test/ssl/domain2.lan/fullchain.pem
       key_file: test/ssl/domain2.lan/privkey.pem
 
-  - name: files.pollystack.com
+  - name: files.ciign.com
     type: proxy
     proxy:
       host: 192.168.1.100

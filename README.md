@@ -1,11 +1,11 @@
 # FAST
 HTTP/HTTPS Static Site Server and Reverse Proxy
 
-[![FAST CI/CD](https://github.com/pollystack/fast/actions/workflows/go.yml/badge.svg)](https://github.com/pollystack/fast/actions/workflows/go.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/pollystack/fast)](https://goreportcard.com/report/github.com/pollystack/fast)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/pollystack/fast)](https://github.com/pollystack/fast/releases)
+[![FAST CI/CD](https://github.com/ciign/fast/actions/workflows/go.yml/badge.svg)](https://github.com/ciign/fast/actions/workflows/go.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ciign/fast)](https://goreportcard.com/report/github.com/ciign/fast)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ciign/fast)](https://github.com/ciign/fast/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/pollystack/fast)](https://golang.org/)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ciign/fast)](https://golang.org/)
 
 FAST (File Access Speedy Transfer) is a lightweight...
 FAST (File Access Speedy Transfer) is a lightweight,
@@ -48,7 +48,7 @@ FAST can be deployed in two ways:
 
 1. Clone the repository:
     ```bash
-    git clone https://github.com/pollystack/fast.git
+    git clone https://github.com/ciign/fast.git
     cd fast-server
     ```
 
