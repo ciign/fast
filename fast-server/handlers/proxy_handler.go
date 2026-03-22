@@ -220,8 +220,12 @@ func HandleProxy(c echo.Context, domain config.Domain) error {
 
 	c.Logger().Infof("Matched location path: %s", location.Path)
 
-	// Check if this is a WebSocket request and handle it separately
-	if isWebSocketRequest(c.Request()) {
+	// Check if this is a WebSocket request and handle it separately.
+	// Skip manual WebSocket proxying for mirror subdomains — the relay
+	// handles WS upgrades itself via its own axum WebSocket support.
+	host := c.Request().Host
+	isMirror := strings.Contains(host, ".mirror.")
+	if isWebSocketRequest(c.Request()) && !isMirror {
 		c.Logger().Info("Detected WebSocket request, handling with WebSocket proxy")
 		return handleWebSocketProxy(c, location)
 	}
