@@ -46,6 +46,23 @@ func ServeIndexOrFile(c echo.Context, publicDir, requestPath string) error {
 		return c.File(fullPath)
 	}
 
+	// Pre-rendered sites (Docusaurus docs/learn): a directory URL serves its
+	// own index.html, and /foo may be /foo.html — so crawlers and fetchers get
+	// the page's real SSR HTML instead of the SPA root. Only then fall back.
+	if stat, err := os.Stat(fullPath); err == nil && stat.IsDir() {
+		dirIndex := filepath.Join(fullPath, "index.html")
+		if st, err := os.Stat(dirIndex); err == nil && !st.IsDir() {
+			c.Logger().Infof("Serving directory index: %s", dirIndex)
+			return c.File(dirIndex)
+		}
+	}
+	if htmlPath := fullPath + ".html"; strings.HasPrefix(htmlPath, absPublicDir) {
+		if st, err := os.Stat(htmlPath); err == nil && !st.IsDir() {
+			c.Logger().Infof("Serving html file: %s", htmlPath)
+			return c.File(htmlPath)
+		}
+	}
+
 	// If file doesn't exist or is a directory, serve the root index.html
 	indexPath := filepath.Join(absPublicDir, "index.html")
 
