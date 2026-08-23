@@ -324,11 +324,11 @@ func (s *Server) Start() error {
 	server := &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%d", s.config.Server.Port),
 		TLSConfig:         tlsConfig,
-		ReadTimeout:       0,                // No timeout for streaming
-		WriteTimeout:      0,                // No timeout for streaming
-		IdleTimeout:       0,                // No timeout for streaming
-		ReadHeaderTimeout: 10 * time.Second, // Only timeout for reading headers
-		// The lack of timeouts is intentional for supporting SSE and other streaming responses
+		ReadTimeout:       0,                 // No timeout for streaming
+		WriteTimeout:      0,                 // No timeout for streaming
+		IdleTimeout:       120 * time.Second, // keep-alive wait BETWEEN requests only; never cuts a stream in flight. 0 meant a peer that vanished without FIN held its socket forever (28k of them, 2026-08-23)
+		ReadHeaderTimeout: 10 * time.Second,  // Only timeout for reading headers
+		// Read/Write have no timeout on purpose (SSE and other streaming responses)
 	}
 
 	// Start HTTP to HTTPS redirect

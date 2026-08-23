@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -207,6 +208,63 @@ func handleWebSocketProxy(c echo.Context, location *config.Location) error {
 	return nil
 }
 
+// Upstream transports are SHARED per target, never per request.
+//
+// Until 2026-08-23 HandleProxy built a fresh *http.Transport for every request
+// with IdleConnTimeout 0. After each response the upstream connection sat idle
+// in a pool nobody would ever use again (the next request made a new
+// Transport), so every proxied request leaked one ESTABLISHED connection and
+// one ephemeral port on both ends. The public-facing instance exhausted its
+// ~28k ephemeral ports after ~36k requests (~42 h) and answered 502 "cannot
+// assign requested address" until restarted; the inner instance was holding
+// 28,558 ESTABLISHED sockets. One transport per target, with an idle timeout,
+// is what keep-alive was always meant to be.
+var transportCache sync.Map // key: scheme|host|port|insecure -> *http.Transport
+
+// transportKey identifies the upstream a transport may be reused for.
+func transportKey(scheme string, p config.ProxyConfig) string {
+	return fmt.Sprintf("%s|%s|%d|%t", scheme, p.Host, p.Port, p.InsecureSkipVerify)
+}
+
+// getTransport returns the shared transport for an upstream target, creating
+// it on first use. Streaming-friendly settings are kept (no response-header
+// timeout, keep-alives on, large buffers); idle connections now expire.
+func getTransport(scheme string, p config.ProxyConfig) *http.Transport {
+	key := transportKey(scheme, p)
+	if t, ok := transportCache.Load(key); ok {
+		return t.(*http.Transport)
+	}
+	t := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		TLSClientConfig: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			MaxVersion:         tls.VersionTLS13,
+			InsecureSkipVerify: p.InsecureSkipVerify, // Using the config setting
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			},
+		},
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          200,
+		MaxIdleConnsPerHost:   100,              // default is 2: anything above that was closed after use
+		IdleConnTimeout:       90 * time.Second, // idle keep-alives die; streams in flight are unaffected
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ResponseHeaderTimeout: 0, // streaming: the upstream may take long before the first byte
+		DisableCompression:    false,
+		DisableKeepAlives:     false,
+		ReadBufferSize:        64 * 1024,
+		WriteBufferSize:       64 * 1024,
+	}
+	actual, _ := transportCache.LoadOrStore(key, t)
+	return actual.(*http.Transport)
+}
+
 func HandleProxy(c echo.Context, domain config.Domain) error {
 	requestPath := c.Request().URL.Path
 	c.Logger().Infof("Original request path: %s", requestPath)
@@ -257,32 +315,7 @@ func HandleProxy(c echo.Context, domain config.Domain) error {
 	c.Logger().Infof("Proxying %s request from %s%s to %s%s",
 		c.Request().Method, originalHost, requestPath, target.String(), requestPath)
 
-	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		TLSClientConfig: &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			MaxVersion:         tls.VersionTLS13,
-			InsecureSkipVerify: proxyConfig.InsecureSkipVerify, // Using the config setting
-			CipherSuites: []uint16{
-				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-			},
-		},
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       0, // Changed from 90s for streaming
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		ResponseHeaderTimeout: 0, // Changed from 30s for streaming
-		DisableCompression:    false,
-		DisableKeepAlives:     false,     // Added for streaming
-		ReadBufferSize:        64 * 1024, // Added for streaming (64KB)
-		WriteBufferSize:       64 * 1024, // Added for streaming (64KB)
-	}
+	transport := getTransport(targetScheme, proxyConfig)
 
 	sourceScheme := "http"
 	if c.Request().TLS != nil {
