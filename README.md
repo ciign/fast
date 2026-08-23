@@ -2,12 +2,10 @@
 HTTP/HTTPS Static Site Server and Reverse Proxy
 
 [![FAST CI/CD](https://github.com/ciign/fast/actions/workflows/go.yml/badge.svg)](https://github.com/ciign/fast/actions/workflows/go.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/ciign/fast)](https://goreportcard.com/report/github.com/ciign/fast)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/ciign/fast)](https://github.com/ciign/fast/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/ciign/fast)](https://golang.org/)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ciign/fast?filename=fast-server%2Fgo.mod)](https://golang.org/)
 
-FAST (File Access Speedy Transfer) is a lightweight...
 FAST (File Access Speedy Transfer) is a lightweight,
 high-performance web server designed for serving static content and acting as a reverse proxy.
 It prioritizes speed and efficiency, making it ideal for quickly delivering static assets and proxying requests to
