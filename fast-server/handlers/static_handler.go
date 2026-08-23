@@ -53,12 +53,14 @@ func ServeIndexOrFile(c echo.Context, publicDir, requestPath string) error {
 		dirIndex := filepath.Join(fullPath, "index.html")
 		if st, err := os.Stat(dirIndex); err == nil && !st.IsDir() {
 			c.Logger().Infof("Serving directory index: %s", dirIndex)
+			setCacheControl(c, dirIndex)
 			return c.File(dirIndex)
 		}
 	}
 	if htmlPath := fullPath + ".html"; strings.HasPrefix(htmlPath, absPublicDir) {
 		if st, err := os.Stat(htmlPath); err == nil && !st.IsDir() {
 			c.Logger().Infof("Serving html file: %s", htmlPath)
+			setCacheControl(c, htmlPath)
 			return c.File(htmlPath)
 		}
 	}

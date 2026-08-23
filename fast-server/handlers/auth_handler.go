@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -82,16 +83,20 @@ func VerifyECToken(authConfig config.AuthConfig, tokenStr string, c echo.Context
 
 	// Parse token structure
 	// Format: timestamp:nonce:host:path:signature
+	// The timestamp is RFC3339 and itself contains ':' (e.g. 2026-08-23T14:27:48Z),
+	// so split from the RIGHT: the last four fields are nonce/host/path/signature
+	// and everything before them is the timestamp. (Splitting into exactly five
+	// fields rejected every real token — fixed 2026-08-23.)
 	parts := strings.Split(string(tokenBytes), ":")
-	if len(parts) != 5 {
+	if len(parts) < 5 {
 		return false, fmt.Errorf("invalid token structure")
 	}
-
-	timestamp := parts[0]
-	nonce := parts[1]
-	tokenHost := parts[2]
-	tokenPath := parts[3]
-	signature := parts[4]
+	n := len(parts)
+	signature := parts[n-1]
+	tokenPath := parts[n-2]
+	tokenHost := parts[n-3]
+	nonce := parts[n-4]
+	timestamp := strings.Join(parts[:n-4], ":")
 
 	// Verify timestamp (prevent replay attacks)
 	ts, err := time.Parse(time.RFC3339, timestamp)
@@ -213,7 +218,7 @@ func AuthMiddleware(authConfig ECAuthConfig) echo.MiddlewareFunc {
 // GenerateECKeyPair generates a new ECDSA key pair (for initial setup)
 func GenerateECKeyPair() (privateKeyPEM, publicKeyPEM string, err error) {
 	// Generate key pair using P-256 curve
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), strings.NewReader("your-entropy-source"))
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader) // was a fixed string reader: every generated key pair was predictable
 	if err != nil {
 		return "", "", err
 	}
