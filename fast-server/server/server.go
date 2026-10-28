@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -91,6 +92,7 @@ func New(cfg *config.Config) *Server {
 	// Middleware
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	e.Use(middleware.GzipWithConfig(gzipConfig()))
 
 	return &Server{
 		echo:   e,
@@ -354,5 +356,24 @@ func (s *Server) startHTTPRedirect() {
 	s.echo.Logger.Infof("Starting HTTP redirect server on port %d (IPv4)", s.config.Server.HTTPPort)
 	if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
 		s.echo.Logger.Fatal(err)
+	}
+}
+
+// gzipConfig compresses text responses (HTML, JS, CSS, JSON, SVG, fonts that
+// are not already packed) for clients that accept it. Media that is already
+// compressed (video, images, woff2, archives) is skipped by extension: gzip
+// would only add CPU and bytes. Small bodies are left alone.
+func gzipConfig() middleware.GzipConfig {
+	skip := map[string]bool{
+		".mp4": true, ".webm": true, ".mov": true, ".m4v": true, ".mp3": true, ".ogg": true,
+		".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".avif": true, ".ico": true,
+		".woff": true, ".woff2": true, ".zip": true, ".gz": true, ".br": true, ".dmg": true, ".pdf": true,
+	}
+	return middleware.GzipConfig{
+		Skipper: func(c echo.Context) bool {
+			return skip[strings.ToLower(filepath.Ext(c.Request().URL.Path))]
+		},
+		Level:     6,
+		MinLength: 1024,
 	}
 }
