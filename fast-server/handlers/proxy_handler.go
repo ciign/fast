@@ -322,6 +322,16 @@ func HandleProxy(c echo.Context, domain config.Domain) error {
 		sourceScheme = "https"
 	}
 
+	// Compression happens once, at this edge: the gzip middleware in server.go
+	// wraps the proxied response, so the upstream must send an identity body.
+	// When the upstream is another fast (eggrun.ai → frontend-eggrun) and the
+	// client's Accept-Encoding were forwarded, it would gzip too and the edge
+	// would gzip the gzip — browsers decode one layer and render the inner
+	// gzip bytes as text (eggrun.ai, 2026-10-30). Go's transport adds its own
+	// Accept-Encoding: gzip and transparently decodes, which is fine: the body
+	// reaches the middleware plain, and Content-Encoding is dropped with it.
+	c.Request().Header.Del("Accept-Encoding")
+
 	proxyMiddleware := middleware.ProxyWithConfig(middleware.ProxyConfig{
 		Balancer: middleware.NewRoundRobinBalancer([]*middleware.ProxyTarget{
 			{
@@ -336,6 +346,10 @@ func HandleProxy(c echo.Context, domain config.Domain) error {
 			// Always treat as streaming
 			res.Header.Del("Content-Length")          // Remove content length to allow streaming
 			res.Header.Set("X-Accel-Buffering", "no") // Disable nginx buffering
+
+			// The edge gzip middleware adds its own Vary: Accept-Encoding; the
+			// upstream's copy (an inner fast) would only duplicate it.
+			res.Header.Del("Vary")
 
 			// Set headers for CORS and COOP for Google OAuth and other services
 			res.Header.Del("Cross-Origin-Opener-Policy")

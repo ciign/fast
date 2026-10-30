@@ -1,18 +1,22 @@
 package handlers
 
 import (
+	"compress/gzip"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"fast/config"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 )
 
 // The upstream transport must be one object per target, not one per request:
@@ -96,4 +100,60 @@ func TestProxyReusesUpstreamConnections(t *testing.T) {
 		t.Fatalf("upstream saw %d new connections for %d sequential requests: connections are not being reused (leak)", got, n)
 	}
 	t.Logf("%d requests over %d upstream connection(s)", n, got)
+}
+
+// A gzip-capable upstream (another fast) must not compress: the edge gzip
+// middleware does that once. Forwarding the client's Accept-Encoding made both
+// layers gzip and browsers rendered the inner gzip bytes (eggrun.ai 2026-10-30).
+func TestProxyUpstreamGetsIdentityBodyAndEdgeGzipsOnce(t *testing.T) {
+	body := strings.Repeat("egg ", 2048)
+	upstream := httptest.NewServer(gzipUpstream(body))
+	defer upstream.Close()
+
+	e := echo.New()
+	e.Use(middleware.GzipWithConfig(middleware.GzipConfig{Level: 6, MinLength: 1024}))
+	dom := upstreamDomain(t, upstream.URL, "/")
+	e.Any("/*", func(c echo.Context) error { return HandleProxy(c, dom) })
+
+	req := httptest.NewRequest(http.MethodGet, "http://eggrun.ai/", nil)
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if got := rec.Header().Values("Vary"); len(got) != 1 || got[0] != "Accept-Encoding" {
+		t.Fatalf("expected a single Vary: Accept-Encoding, got %v", got)
+	}
+	if rec.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("edge must gzip, got %q", rec.Header().Get("Content-Encoding"))
+	}
+	zr, err := gzip.NewReader(rec.Body)
+	if err != nil {
+		t.Fatalf("not gzip: %v", err)
+	}
+	plain, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("one gzip layer must yield the page, got %v", err)
+	}
+	if string(plain) != body {
+		t.Fatalf("decoded body is not the page (double-gzipped?): %d bytes", len(plain))
+	}
+}
+
+// gzipUpstream behaves like a fast static instance: it gzips when asked.
+func gzipUpstream(body string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Add("Vary", "Accept-Encoding")
+			zw := gzip.NewWriter(w)
+			_, _ = zw.Write([]byte(body))
+			_ = zw.Close()
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	})
 }
