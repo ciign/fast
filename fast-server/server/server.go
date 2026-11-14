@@ -89,6 +89,12 @@ func New(cfg *config.Config) *Server {
 		templates: tmpl,
 	}
 
+	// The client's address is the address of the connection. This server is
+	// the edge: an X-Forwarded-For or X-Real-IP on an incoming request was
+	// written by the client, and upstreams key rate limits on what is passed
+	// on from here.
+	e.IPExtractor = echo.ExtractIPDirect()
+
 	// Middleware
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())

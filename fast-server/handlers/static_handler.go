@@ -15,6 +15,9 @@ import (
 //   - /assets/*: content-hashed build output — the filename changes whenever
 //     the bytes change, so it's safe to cache for a year, immutable.
 func setCacheControl(c echo.Context, path string) {
+	// Every static response passes through here, so this is also where it
+	// gets the base security headers.
+	ApplySecurityHeaders(c.Response().Header(), RequestIsHTTPS(c))
 	switch {
 	case strings.HasSuffix(path, "index.html"):
 		c.Response().Header().Set("Cache-Control", "public, max-age=3600")
