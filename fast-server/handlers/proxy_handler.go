@@ -355,7 +355,9 @@ func HandleProxy(c echo.Context, domain config.Domain) error {
 			res.Header.Del("Cross-Origin-Opener-Policy")
 			res.Header.Set("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
 
-			// Fill in what the upstream left unset; its own choices win.
+			// Fill in what the upstream left unset; its own choices win:
+			// first the domain's configured headers, then the base ones.
+			ApplyDomainHeaders(res.Header, domain.Headers)
 			ApplySecurityHeaders(res.Header, RequestIsHTTPS(c))
 
 			return nil

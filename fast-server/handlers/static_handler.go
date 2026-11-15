@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fast/config"
 	"github.com/labstack/echo/v4"
 	"os"
 	"path/filepath"
@@ -16,7 +17,10 @@ import (
 //     the bytes change, so it's safe to cache for a year, immutable.
 func setCacheControl(c echo.Context, path string) {
 	// Every static response passes through here, so this is also where it
-	// gets the base security headers.
+	// gets the domain's own headers and then the base security headers.
+	if domain, ok := c.Get("domain").(config.Domain); ok {
+		ApplyDomainHeaders(c.Response().Header(), domain.Headers)
+	}
 	ApplySecurityHeaders(c.Response().Header(), RequestIsHTTPS(c))
 	switch {
 	case strings.HasSuffix(path, "index.html"):

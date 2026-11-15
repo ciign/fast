@@ -39,3 +39,15 @@ func ApplySecurityHeaders(h http.Header, https bool) {
 		h.Set("Strict-Transport-Security", hstsValue)
 	}
 }
+
+// ApplyDomainHeaders sets the headers a domain's configuration asks for on h,
+// each only where h has no value of its own. It runs before
+// ApplySecurityHeaders so a domain's choice beats the base defaults, and after
+// the upstream has answered so the upstream's choice beats the domain's.
+func ApplyDomainHeaders(h http.Header, headers map[string]string) {
+	for name, value := range headers {
+		if h.Get(name) == "" {
+			h.Set(name, value)
+		}
+	}
+}

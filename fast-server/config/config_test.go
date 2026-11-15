@@ -188,3 +188,94 @@ domains:
 		t.Fatalf("nested location proxy fields lost: %+v", app.Locations[1].Proxy)
 	}
 }
+
+// A domain's `headers:` map is sent as-is, so it must hold things that can be
+// sent: a token for the name, one line for the value.
+func TestDomainHeadersValidation(t *testing.T) {
+	ok := Domain{Name: "a", Type: "static", PublicDir: "/www", SSL: validSSL(), Headers: map[string]string{
+		"Content-Security-Policy-Report-Only": "default-src 'self'; frame-ancestors 'none'",
+		"Permissions-Policy":                  "camera=()",
+		"X-Tab-And-Latin1":                    "a\tb \xe9", // a tab and a Latin-1 byte are legal in a value
+	}}
+	if err := ok.validate(); err != nil {
+		t.Fatalf("valid headers rejected: %v", err)
+	}
+	if err := ok.validateWithoutSSL(); err != nil {
+		t.Fatalf("valid headers rejected without SSL: %v", err)
+	}
+	bad := []struct {
+		name    string
+		headers map[string]string
+		want    string
+	}{
+		{"line break in value", map[string]string{"X-A": "one\r\nSet-Cookie: b"}, "one line"},
+		{"newline in value", map[string]string{"X-A": "one\ntwo"}, "one line"},
+		{"NUL in value", map[string]string{"X-A": "one\x00two"}, "one line"},
+		{"DEL in value", map[string]string{"X-A": "one\x7ftwo"}, "one line"},
+		{"space in name", map[string]string{"X A": "v"}, "invalid header name"},
+		{"colon in name", map[string]string{"X-A:": "v"}, "invalid header name"},
+		{"empty name", map[string]string{"": "v"}, "invalid header name"},
+		{"non-ASCII name", map[string]string{"X-Ä": "v"}, "invalid header name"},
+		{"control byte in name", map[string]string{"X-A\x01": "v"}, "invalid header name"},
+		{"same header twice", map[string]string{"Content-Security-Policy": "a", "content-security-policy": "b"}, "same header"},
+	}
+	for _, tc := range bad {
+		d := Domain{Name: "a", Type: "static", PublicDir: "/www", SSL: validSSL(), Headers: tc.headers}
+		for _, check := range []func() error{d.validate, d.validateWithoutSSL} {
+			if err := check(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("%s: got %v, want error containing %q", tc.name, err, tc.want)
+			}
+		}
+	}
+}
+
+// Two static domains sharing one headers block through a YAML anchor, the way
+// a site served under two names is written.
+func TestHeadersYAML(t *testing.T) {
+	src := `
+server:
+  port: 3443
+domains:
+  - name: example.com
+    type: static
+    public_dir: /www
+    headers: &site_headers
+      Content-Security-Policy-Report-Only: "default-src 'self'; img-src 'self' data:"
+  - name: www.example.com
+    type: static
+    public_dir: /www
+    headers: *site_headers
+  - name: files.example.com
+    type: file_directory
+    public_dir: /files
+  - name: long.example.com
+    type: static
+    public_dir: /www
+    headers:
+      Content-Security-Policy-Report-Only: >-
+        default-src 'self';
+        img-src 'self' data:
+`
+	var c Config
+	if err := yaml.Unmarshal([]byte(src), &c); err != nil {
+		t.Fatal(err)
+	}
+	c.setDefaults()
+	if err := c.validate(); err != nil {
+		t.Fatal(err)
+	}
+	want := "default-src 'self'; img-src 'self' data:"
+	for _, d := range c.Domains[:2] {
+		if got := d.Headers["Content-Security-Policy-Report-Only"]; got != want {
+			t.Fatalf("%s: header %q", d.Name, got)
+		}
+	}
+	if len(c.Domains[2].Headers) != 0 {
+		t.Fatalf("a domain without headers must have none: %v", c.Domains[2].Headers)
+	}
+	// A long policy written as a folded scalar, one directive per line at one
+	// indent, arrives as a single line.
+	if got := c.Domains[3].Headers["Content-Security-Policy-Report-Only"]; got != want {
+		t.Fatalf("folded header = %q", got)
+	}
+}

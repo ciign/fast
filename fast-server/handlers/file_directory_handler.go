@@ -43,6 +43,9 @@ func (f FileInfo) FormattedDate() string {
 }
 
 func HandleFileDirectory(c echo.Context, domain config.Domain) error {
+	// Listings and downloads alike carry the domain's configured headers.
+	ApplyDomainHeaders(c.Response().Header(), domain.Headers)
+
 	path := c.Param("*")
 	fullPath := filepath.Join(domain.PublicDir, path)
 

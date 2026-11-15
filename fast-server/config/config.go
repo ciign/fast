@@ -3,8 +3,10 @@ package config
 import (
 	"fmt"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/net/http/httpguts"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
+	"net/textproto"
 	"os"
 	"os/exec"
 	"runtime"
@@ -76,6 +78,33 @@ type Domain struct {
 	SSL       SSLConfig   `yaml:"ssl"`
 	Locations []Location  `yaml:"locations,omitempty"`
 	Auth      AuthConfig  `yaml:"auth,omitempty"` // Add authentication config
+	// Headers are response headers this domain's answers carry (a
+	// Content-Security-Policy for a static site, say). Each is set only where
+	// the response has no value of its own: a header the upstream or the file
+	// handler already chose stays.
+	Headers map[string]string `yaml:"headers,omitempty"`
+}
+
+// validateHeaders refuses a header that net/http would drop or mangle rather
+// than send: a name outside the token grammar, a value with a control byte
+// or a line break (which would start a header of its own), and two names
+// that are one header once canonicalised (map order would pick the winner).
+func (d *Domain) validateHeaders() error {
+	seen := make(map[string]string, len(d.Headers))
+	for name, value := range d.Headers {
+		if !httpguts.ValidHeaderFieldName(name) {
+			return fmt.Errorf("invalid header name: %q", name)
+		}
+		if !httpguts.ValidHeaderFieldValue(value) {
+			return fmt.Errorf("header %s: value must be one line of printable characters", name)
+		}
+		canonical := textproto.CanonicalMIMEHeaderKey(name)
+		if other, dup := seen[canonical]; dup {
+			return fmt.Errorf("headers %q and %q are the same header", other, name)
+		}
+		seen[canonical] = name
+	}
+	return nil
 }
 
 func (d *Domain) setDefaults() {
@@ -146,6 +175,10 @@ func (d *Domain) validate() error {
 		if d.Auth.TokenLifetime <= 0 {
 			return fmt.Errorf("invalid token_lifetime: %d", d.Auth.TokenLifetime)
 		}
+	}
+
+	if err := d.validateHeaders(); err != nil {
+		return err
 	}
 
 	// Always validate SSL for the regular validate method
@@ -223,7 +256,7 @@ func (d *Domain) validateWithoutSSL() error {
 		}
 	}
 
-	return nil
+	return d.validateHeaders()
 }
 
 type ServerConfig struct {

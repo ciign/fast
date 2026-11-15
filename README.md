@@ -231,6 +231,21 @@ Domain Types
    port: 8000
    ```
 
+### Response Headers
+A domain may name response headers that every one of its answers carries,
+whatever its type. Each is set only where the response has no value of its own,
+so a header the upstream chose is kept. Names must be plain header tokens and
+values must fit on one line.
+
+```yaml
+- name: example.com
+  type: static
+  public_dir: /var/www/fast/example.com
+  headers:
+    Content-Security-Policy: "default-src 'self'; frame-ancestors 'none'"
+    Permissions-Policy: "camera=(), microphone=()"
+```
+
 ### SSL Configuration
 SSL certificates can be configured per domain or globally:
 
