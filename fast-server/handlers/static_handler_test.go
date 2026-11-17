@@ -77,6 +77,35 @@ func TestStaticServing(t *testing.T) {
 	}
 }
 
+func TestStaticMissingFileIs404NotTheApp(t *testing.T) {
+	root := staticSite(t)
+	writeFile(t, filepath.Join(root, ".well-known", "security.txt"), "Contact: x")
+	for _, p := range []string{
+		"/.well-known/ard.json", "/.well-known/ai-catalog.json", "/.well-known/change-password",
+		"/humans.txt", "/llms-full.txt", "/nope.xml", "/assets/gone.9a1b.js", "/img/missing.PNG",
+		"/docs/missing.md", "/favicon.ico",
+	} {
+		rec := serveStatic(t, root, p)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", p, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "root spa") {
+			t.Errorf("%s: answered with the app's page", p)
+		}
+	}
+	// A file that exists is served, under /.well-known/ too.
+	if rec := serveStatic(t, root, "/.well-known/security.txt"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Contact") {
+		t.Errorf("/.well-known/security.txt: %d %q", rec.Code, rec.Body.String())
+	}
+	// Client-side routes keep the app, including ones with a dot of their own.
+	for _, p := range []string{"/settings/profile", "/egg/ubuntu-26.04", "/egg/windows-11:2026.11.09", "/v1.2", "/user/jane.doe"} {
+		rec := serveStatic(t, root, p)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "root spa") {
+			t.Errorf("%s: %d %q, want the app's page", p, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestStaticTraversalStaysInsidePublicDir(t *testing.T) {
 	root := staticSite(t)
 	// A secret next to (not inside) the public dir must never be reachable.

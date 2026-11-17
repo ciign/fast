@@ -30,6 +30,30 @@ func setCacheControl(c echo.Context, path string) {
 	}
 }
 
+// fileExtensions are the extensions a static site's own files have. A
+// client-side route may carry a dot of its own (a version, a tag), so only
+// these mark a path as naming a file.
+var fileExtensions = map[string]bool{
+	".json": true, ".txt": true, ".xml": true, ".md": true, ".map": true,
+	".js": true, ".mjs": true, ".css": true, ".wasm": true,
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".svg": true,
+	".ico": true, ".webp": true, ".avif": true, ".bmp": true,
+	".woff": true, ".woff2": true, ".ttf": true, ".otf": true,
+	".mp4": true, ".webm": true, ".mp3": true, ".pdf": true, ".zip": true,
+	".webmanifest": true,
+}
+
+// namesAFile reports whether a request path asks for a file rather than a
+// page: it is under /.well-known/, or its last segment ends in one of
+// fileExtensions.
+func namesAFile(requestPath string) bool {
+	clean := filepath.ToSlash(filepath.Clean("/" + requestPath))
+	if strings.HasPrefix(clean, "/.well-known/") {
+		return true
+	}
+	return fileExtensions[strings.ToLower(filepath.Ext(clean))]
+}
+
 func ServeIndexOrFile(c echo.Context, publicDir, requestPath string) error {
 	// Convert publicDir to absolute path
 	absPublicDir, err := filepath.Abs(publicDir)
@@ -72,7 +96,15 @@ func ServeIndexOrFile(c echo.Context, publicDir, requestPath string) error {
 		}
 	}
 
-	// If file doesn't exist or is a directory, serve the root index.html
+	// A path that names a file (by its extension, or anything under
+	// /.well-known/) and has none is not a client-side route: answer 404
+	// rather than the app's page with a 200, which a crawler or a tool
+	// fetching ard.json or security.txt would take for the file itself.
+	if namesAFile(requestPath) {
+		return echo.ErrNotFound
+	}
+
+	// Any other path with no file is a client-side route: serve the root index.html
 	indexPath := filepath.Join(absPublicDir, "index.html")
 
 	// Verify index.html exists
